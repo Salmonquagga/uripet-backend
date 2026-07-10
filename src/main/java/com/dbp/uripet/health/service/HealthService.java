@@ -1,6 +1,5 @@
 package com.dbp.uripet.health.service;
 
-import com.dbp.uripet.config.error.ForbiddenException;
 import com.dbp.uripet.config.error.ResourceNotFoundException;
 import com.dbp.uripet.health.domain.HealthRecord;
 import com.dbp.uripet.health.domain.HealthRecordType;
@@ -11,11 +10,7 @@ import com.dbp.uripet.pet.domain.Pet;
 import com.dbp.uripet.pet.repository.PetRepository;
 import com.dbp.uripet.user.domain.User;
 import com.dbp.uripet.user.service.UserService;
-import com.dbp.uripet.workspace.domain.Workspace;
-import com.dbp.uripet.workspace.domain.WorkspaceMember;
-import com.dbp.uripet.workspace.domain.enums.WorkspaceRole;
-import com.dbp.uripet.workspace.domain.enums.WorkspaceStatus;
-import com.dbp.uripet.workspace.repository.WorkspaceMemberRepository;
+import com.dbp.uripet.workspace.service.PlanAccessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,36 +18,62 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
 public class HealthService {
-    private final HealthRecordRepository healthRecordRepository;
+
+    private final HealthRecordRepository
+            healthRecordRepository;
+
     private final PetRepository petRepository;
+
     private final UserService userService;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
+
+    private final PlanAccessService
+            planAccessService;
 
     @Transactional
-    public HealthResponseDto createRecord(String pid, HealthRequestDto request) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public HealthResponseDto createRecord(
+            String pid,
+            HealthRequestDto request
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        HealthRecord record = HealthRecord.builder()
-                .pet(pet)
-                .createdBy(user)
-                .type(request.getType())
-                .title(request.getTitle())
-                .description(request.getDescription())
-                .date(request.getDate())
-                .build();
+        planAccessService
+                .checkCanManageHealthRecords(
+                        pet.getWorkspace(),
+                        currentUser
+                );
 
-        healthRecordRepository.save(record);
+        HealthRecord record =
+                HealthRecord.builder()
+                        .pet(pet)
+                        .createdBy(currentUser)
+                        .type(request.getType())
+                        .title(
+                                cleanRequiredText(
+                                        request.getTitle()
+                                )
+                        )
+                        .description(
+                                cleanOptionalText(
+                                        request
+                                                .getDescription()
+                                )
+                        )
+                        .date(request.getDate())
+                        .build();
 
-        return mapToDto(record);
+        return mapToDto(
+                healthRecordRepository.save(
+                        record
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -62,31 +83,50 @@ public class HealthService {
             int page,
             int size
     ) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanAccessWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.min(Math.max(size, 1), 100);
+        planAccessService
+                .checkCanViewHealthRecords(
+                        pet.getWorkspace(),
+                        currentUser
+                );
 
-        Pageable pageable = PageRequest.of(
-                safePage,
-                safeSize,
-                Sort.by(Sort.Direction.DESC, "date")
-        );
+        Pageable pageable =
+                PageRequest.of(
+                        Math.max(page, 0),
+                        Math.min(
+                                Math.max(size, 1),
+                                100
+                        ),
+                        Sort.by(
+                                Sort.Order.desc("date"),
+                                Sort.Order.desc("createdAt")
+                        )
+                );
 
         Page<HealthRecord> records;
 
         if (type != null) {
-            records = healthRecordRepository.findByPetAndType(pet, type, pageable);
+            records = healthRecordRepository
+                    .findByPetAndType(
+                            pet,
+                            type,
+                            pageable
+                    );
         } else {
-            records = healthRecordRepository.findByPet(pet, pageable);
+            records = healthRecordRepository
+                    .findByPet(
+                            pet,
+                            pageable
+                    );
         }
 
-        return records.map(this::mapToDto);
+        return records.map(
+                this::mapToDto
+        );
     }
 
     @Transactional
@@ -95,90 +135,179 @@ public class HealthService {
             Long recordId,
             HealthRequestDto request
     ) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        HealthRecord record = healthRecordRepository.findById(recordId)
-                .orElseThrow(() -> new ResourceNotFoundException("Record not found"));
+        planAccessService
+                .checkCanManageHealthRecords(
+                        pet.getWorkspace(),
+                        currentUser
+                );
 
-        if (!record.getPet().getId().equals(pet.getId())) {
-            throw new ResourceNotFoundException("Record does not belong to this pet");
-        }
+        HealthRecord record =
+                findRecordForPet(
+                        pet,
+                        recordId
+                );
 
         if (request.getType() != null) {
-            record.setType(request.getType());
+            record.setType(
+                    request.getType()
+            );
         }
 
         if (request.getTitle() != null) {
-            record.setTitle(request.getTitle());
+            record.setTitle(
+                    cleanRequiredText(
+                            request.getTitle()
+                    )
+            );
         }
 
         if (request.getDescription() != null) {
-            record.setDescription(request.getDescription());
+            record.setDescription(
+                    cleanOptionalText(
+                            request.getDescription()
+                    )
+            );
         }
 
         if (request.getDate() != null) {
-            record.setDate(request.getDate());
+            record.setDate(
+                    request.getDate()
+            );
         }
 
-        healthRecordRepository.save(record);
-
-        return mapToDto(record);
+        return mapToDto(
+                healthRecordRepository.save(
+                        record
+                )
+        );
     }
 
     @Transactional
-    public void deleteRecord(String pid, Long recordId) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public void deleteRecord(
+            String pid,
+            Long recordId
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        HealthRecord record = healthRecordRepository.findById(recordId)
-                .orElseThrow(() -> new ResourceNotFoundException("Record not found"));
+        planAccessService
+                .checkCanManageHealthRecords(
+                        pet.getWorkspace(),
+                        currentUser
+                );
 
-        if (!record.getPet().getId().equals(pet.getId())) {
-            throw new ResourceNotFoundException("Record does not belong to this pet");
-        }
+        HealthRecord record =
+                findRecordForPet(
+                        pet,
+                        recordId
+                );
 
         healthRecordRepository.delete(record);
     }
 
-    private WorkspaceMember checkCanAccessWorkspace(Workspace workspace, User user) {
-        return workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)
-                .orElseThrow(() -> new ForbiddenException("Not authorized to access this workspace"));
-    }
-
-    private WorkspaceMember checkCanManageWorkspace(Workspace workspace, User user) {
-        WorkspaceMember member = checkCanAccessWorkspace(workspace, user);
-
-        if (member.getRole() != WorkspaceRole.OWNER && member.getRole() != WorkspaceRole.ADMIN) {
-            throw new ForbiddenException("Owner or admin role required");
+    private Pet findPet(
+            String pid
+    ) {
+        if (!StringUtils.hasText(pid)) {
+            throw new ResourceNotFoundException(
+                    "Pet PID is required"
+            );
         }
 
-        return member;
+        return petRepository
+                .findByPid(pid.trim())
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Pet not found"
+                        )
+                );
     }
 
-    private void checkWorkspaceActive(Workspace workspace) {
-        if (workspace.getStatus() != WorkspaceStatus.ACTIVE) {
-            throw new ForbiddenException("Workspace is not active");
+    private HealthRecord findRecordForPet(
+            Pet pet,
+            Long recordId
+    ) {
+        if (recordId == null) {
+            throw new ResourceNotFoundException(
+                    "Health record ID is required"
+            );
         }
+
+        HealthRecord record =
+                healthRecordRepository
+                        .findById(recordId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Health record not found"
+                                )
+                        );
+
+        if (!record.getPet()
+                .getId()
+                .equals(pet.getId())) {
+
+            /*
+             * Se responde como no encontrado
+             * para no revelar registros de otra mascota.
+             */
+            throw new ResourceNotFoundException(
+                    "Health record not found for this pet"
+            );
+        }
+
+        return record;
     }
 
-    private HealthResponseDto mapToDto(HealthRecord record) {
+    private String cleanRequiredText(
+            String value
+    ) {
+        if (!StringUtils.hasText(value)) {
+            return value;
+        }
+
+        return value.trim();
+    }
+
+    private String cleanOptionalText(
+            String value
+    ) {
+        if (value == null) {
+            return null;
+        }
+
+        String cleaned = value.trim();
+
+        return cleaned.isBlank()
+                ? null
+                : cleaned;
+    }
+
+    private HealthResponseDto mapToDto(
+            HealthRecord record
+    ) {
         return HealthResponseDto.builder()
                 .id(record.getId())
-                .createdByUid(record.getCreatedBy().getUid())
+                .createdByUid(
+                        record
+                                .getCreatedBy()
+                                .getUid()
+                )
                 .type(record.getType())
                 .title(record.getTitle())
-                .description(record.getDescription())
+                .description(
+                        record.getDescription()
+                )
                 .date(record.getDate())
-                .createdAt(record.getCreatedAt())
+                .createdAt(
+                        record.getCreatedAt()
+                )
                 .build();
     }
 }

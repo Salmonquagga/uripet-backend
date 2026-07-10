@@ -17,16 +17,29 @@ public class PaymentWebhookController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> receiveWebhook(
-            @Valid @RequestBody PaymentWebhookRequestDto request,
-            @RequestHeader(value = "X-Webhook-Secret", required = false) String webhookSecret
+    public ResponseEntity<Map<String, Object>>
+    receiveWebhook(
+            @Valid
+            @RequestBody
+            PaymentWebhookRequestDto request,
+
+            @RequestHeader(
+                    value = "X-Webhook-Secret",
+                    required = false
+            )
+            String webhookSecret
     ) {
-        paymentService.processWebhook(request, webhookSecret);
+        paymentService.processWebhook(
+                request,
+                webhookSecret
+        );
 
         return ResponseEntity.ok(
                 Map.of(
-                        "received", true,
-                        "message", "Payment webhook processed successfully"
+                        "received",
+                        true,
+                        "message",
+                        "Payment webhook processed successfully"
                 )
         );
     }

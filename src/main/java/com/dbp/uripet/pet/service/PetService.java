@@ -1,7 +1,6 @@
 package com.dbp.uripet.pet.service;
 
 import com.dbp.uripet.config.error.DuplicateResourceException;
-import com.dbp.uripet.config.error.ForbiddenException;
 import com.dbp.uripet.config.error.InvalidOperationException;
 import com.dbp.uripet.config.error.ResourceNotFoundException;
 import com.dbp.uripet.events.UserAddedToPetEvent;
@@ -23,10 +22,10 @@ import com.dbp.uripet.user.service.UserService;
 import com.dbp.uripet.workspace.domain.Workspace;
 import com.dbp.uripet.workspace.domain.WorkspaceMember;
 import com.dbp.uripet.workspace.domain.enums.PlanType;
-import com.dbp.uripet.workspace.domain.enums.WorkspaceRole;
 import com.dbp.uripet.workspace.domain.enums.WorkspaceStatus;
 import com.dbp.uripet.workspace.repository.WorkspaceMemberRepository;
 import com.dbp.uripet.workspace.repository.WorkspaceRepository;
+import com.dbp.uripet.workspace.service.PlanAccessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -35,156 +34,354 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class PetService {
 
     private final PetRepository petRepository;
-    private final PetResponsibleRepository petResponsibleRepository;
+
+    private final PetResponsibleRepository
+            petResponsibleRepository;
+
     private final UserService userService;
+
     private final UserRepository userRepository;
-    private final ApplicationEventPublisher eventPublisher;
-    private final ImageStorageService imageStorageService;
-    private final WorkspaceRepository workspaceRepository;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
+
+    private final ApplicationEventPublisher
+            eventPublisher;
+
+    private final ImageStorageService
+            imageStorageService;
+
+    private final WorkspaceRepository
+            workspaceRepository;
+
+    private final WorkspaceMemberRepository
+            workspaceMemberRepository;
+
+    private final PlanAccessService
+            planAccessService;
+
+    /*
+     * =====================================================
+     * MASCOTAS
+     * =====================================================
+     */
 
     @Transactional
-    public PetResponseDto createPet(PetRequestDto request) {
-        User user = userService.getAuthenticatedUser();
-        Workspace workspace = resolveWorkspaceForCreate(request.getWorkspaceUid(), user);
+    public PetResponseDto createPet(
+            PetRequestDto request
+    ) {
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
-        checkPetLimit(workspace);
+        Workspace workspace =
+                resolveWorkspaceForCreate(
+                        request.getWorkspaceUid(),
+                        currentUser
+                );
+
+        /*
+         * Valida:
+         * - workspace activo;
+         * - rol OWNER o ADMIN;
+         * - límite de mascotas según plan.
+         */
+        planAccessService.checkCanCreatePet(
+                workspace,
+                currentUser
+        );
 
         Pet pet = Pet.builder()
                 .workspace(workspace)
-                .name(request.getName())
-                .species(request.getSpecies())
-                .breed(request.getBreed())
+                .name(cleanText(request.getName()))
+                .species(cleanText(request.getSpecies()))
+                .breed(cleanText(request.getBreed()))
                 .birthDate(request.getBirthDate())
                 .weight(request.getWeight())
-                .color(request.getColor())
-                .emergencyContact(request.getEmergencyContact())
+                .color(cleanText(request.getColor()))
+                .emergencyContact(
+                        cleanText(
+                                request.getEmergencyContact()
+                        )
+                )
                 .build();
 
         petRepository.save(pet);
 
-        List<String> imagesUrl = resolveImages(pet, request, null);
+        List<String> imagesUrl =
+                resolveImages(
+                        pet,
+                        request,
+                        null
+                );
+
         pet.setImagesUrl(imagesUrl);
-        petRepository.save(pet);
 
-        // Compatibilidad con la lógica antigua de responsables por mascota.
-        if (!petResponsibleRepository.existsByPetAndUser(pet, user)) {
-            PetResponsible responsible = PetResponsible.builder()
-                    .pet(pet)
-                    .user(user)
-                    .accessLevel(AccessLevel.EDITOR)
-                    .responsibleRole(ResponsibleRole.OWNER)
-                    .build();
+        Pet savedPet =
+                petRepository.save(pet);
 
-            petResponsibleRepository.save(responsible);
+        /*
+         * El creador se registra como responsable
+         * principal de la mascota.
+         *
+         * Ya pertenece al workspace, por lo tanto
+         * no se crea una membresía adicional.
+         */
+        if (!petResponsibleRepository
+                .existsByPetAndUser(
+                        savedPet,
+                        currentUser
+                )) {
+
+            PetResponsible responsible =
+                    PetResponsible.builder()
+                            .pet(savedPet)
+                            .user(currentUser)
+                            .accessLevel(
+                                    AccessLevel.EDITOR
+                            )
+                            .responsibleRole(
+                                    ResponsibleRole.OWNER
+                            )
+                            .build();
+
+            petResponsibleRepository.save(
+                    responsible
+            );
         }
 
-        return mapToDto(pet);
+        return mapToDto(savedPet);
     }
 
     @Transactional(readOnly = true)
-    public PetResponseDto getPet(String pid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public PetResponseDto getPet(
+            String pid
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkCanAccessWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
+
+        /*
+         * El detalle completo no se entrega
+         * para grupos congelados.
+         *
+         * En ese caso se usa:
+         * GET /workspaces/{workspaceUid}/preview
+         */
+        planAccessService.checkCanViewPets(
+                pet.getWorkspace(),
+                currentUser
+        );
+
+        planAccessService.checkWorkspaceActive(
+                pet.getWorkspace()
+        );
 
         return mapToDto(pet);
     }
 
+    /*
+     * Se conserva por compatibilidad interna.
+     *
+     * El endpoint público actual utiliza
+     * PetPrivacyService, que filtra los datos.
+     */
     @Transactional(readOnly = true)
-    public PetResponseDto getPublicPet(String pid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
-
-        return mapToDto(pet);
+    public PetResponseDto getPublicPet(
+            String pid
+    ) {
+        return mapToDto(
+                findPet(pid)
+        );
     }
 
     @Transactional
-    public PetResponseDto updatePet(String pid, PetRequestDto request) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public PetResponseDto updatePet(
+            String pid,
+            PetRequestDto request
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        if (request.getName() != null) pet.setName(request.getName());
-        if (request.getSpecies() != null) pet.setSpecies(request.getSpecies());
-        if (request.getBreed() != null) pet.setBreed(request.getBreed());
-        if (request.getBirthDate() != null) pet.setBirthDate(request.getBirthDate());
-        if (request.getWeight() != null) pet.setWeight(request.getWeight());
-        if (request.getColor() != null) pet.setColor(request.getColor());
-        if (request.getEmergencyContact() != null) pet.setEmergencyContact(request.getEmergencyContact());
+        planAccessService.checkCanEditPet(
+                pet.getWorkspace(),
+                currentUser
+        );
 
-        List<String> imagesUrl = resolveImages(pet, request, pet.getImagesUrl());
+        if (request.getName() != null) {
+            pet.setName(
+                    cleanText(request.getName())
+            );
+        }
+
+        if (request.getSpecies() != null) {
+            pet.setSpecies(
+                    cleanText(request.getSpecies())
+            );
+        }
+
+        if (request.getBreed() != null) {
+            pet.setBreed(
+                    cleanText(request.getBreed())
+            );
+        }
+
+        if (request.getBirthDate() != null) {
+            pet.setBirthDate(
+                    request.getBirthDate()
+            );
+        }
+
+        if (request.getWeight() != null) {
+            pet.setWeight(
+                    request.getWeight()
+            );
+        }
+
+        if (request.getColor() != null) {
+            pet.setColor(
+                    cleanText(request.getColor())
+            );
+        }
+
+        if (request.getEmergencyContact() != null) {
+            pet.setEmergencyContact(
+                    cleanText(
+                            request.getEmergencyContact()
+                    )
+            );
+        }
+
+        List<String> imagesUrl =
+                resolveImages(
+                        pet,
+                        request,
+                        pet.getImagesUrl()
+                );
+
         pet.setImagesUrl(imagesUrl);
 
-        petRepository.save(pet);
-        return mapToDto(pet);
+        return mapToDto(
+                petRepository.save(pet)
+        );
     }
 
     @Transactional
-    public void deletePet(String pid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public void deletePet(
+            String pid
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        petResponsibleRepository.deleteAll(petResponsibleRepository.findByPet(pet));
+        planAccessService.checkCanDeletePet(
+                pet.getWorkspace(),
+                currentUser
+        );
+
+        /*
+         * Los registros médicos y responsables
+         * se eliminan por cascade/orphanRemoval
+         * configurado en Pet.
+         */
         petRepository.delete(pet);
     }
 
     @Transactional(readOnly = true)
-    public Page<PetResponseDto> getMyPets(int page, int size, String search, String workspaceUid) {
-        User user = userService.getAuthenticatedUser();
+    public Page<PetResponseDto> getMyPets(
+            int page,
+            int size,
+            String search,
+            String workspaceUid
+    ) {
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        Pageable pageable = PageRequest.of(
-                Math.max(page, 0),
-                Math.min(Math.max(size, 1), 100),
-                Sort.by(Sort.Direction.DESC, "createdAt")
-        );
+        Pageable pageable =
+                PageRequest.of(
+                        Math.max(page, 0),
+                        Math.min(
+                                Math.max(size, 1),
+                                100
+                        ),
+                        Sort.by(
+                                Sort.Direction.DESC,
+                                "createdAt"
+                        )
+                );
+
+        String cleanSearch =
+                StringUtils.hasText(search)
+                        ? search.trim()
+                        : null;
 
         Page<Pet> pets;
-        String cleanSearch = search == null ? null : search.trim();
 
-        if (workspaceUid != null && !workspaceUid.isBlank()) {
-            Workspace workspace = workspaceRepository.findByUid(workspaceUid)
-                    .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"));
+        if (StringUtils.hasText(workspaceUid)) {
+            Workspace workspace =
+                    findWorkspace(workspaceUid);
 
-            checkCanAccessWorkspace(workspace, user);
+            planAccessService.checkCanViewPets(
+                    workspace,
+                    currentUser
+            );
 
-            if (cleanSearch != null && !cleanSearch.isEmpty()) {
-                pets = petRepository.findByWorkspaceAndNameContainingIgnoreCase(workspace, cleanSearch, pageable);
+            /*
+             * Si está congelado, el frontend
+             * debe consumir el preview seguro.
+             */
+            planAccessService.checkWorkspaceActive(
+                    workspace
+            );
+
+            if (cleanSearch != null) {
+                pets = petRepository
+                        .findByWorkspaceAndNameContainingIgnoreCase(
+                                workspace,
+                                cleanSearch,
+                                pageable
+                        );
             } else {
-                pets = petRepository.findByWorkspace(workspace, pageable);
+                pets = petRepository
+                        .findByWorkspace(
+                                workspace,
+                                pageable
+                        );
             }
-        } else {
-            List<Workspace> workspaces = getAccessibleWorkspaces(user);
 
-            if (workspaces.isEmpty()) {
+        } else {
+            List<Workspace> activeWorkspaces =
+                    getAccessibleActiveWorkspaces(
+                            currentUser
+                    );
+
+            if (activeWorkspaces.isEmpty()) {
                 return Page.empty(pageable);
             }
 
-            if (cleanSearch != null && !cleanSearch.isEmpty()) {
-                pets = petRepository.findByWorkspaceInAndNameContainingIgnoreCase(workspaces, cleanSearch, pageable);
+            if (cleanSearch != null) {
+                pets = petRepository
+                        .findByWorkspaceInAndNameContainingIgnoreCase(
+                                activeWorkspaces,
+                                cleanSearch,
+                                pageable
+                        );
             } else {
-                pets = petRepository.findByWorkspaceIn(workspaces, pageable);
+                pets = petRepository
+                        .findByWorkspaceIn(
+                                activeWorkspaces,
+                                pageable
+                        );
             }
         }
 
@@ -192,28 +389,76 @@ public class PetService {
     }
 
     @Transactional(readOnly = true)
-    public List<PetResponseDto> getPetsByUser(String uid) {
-        User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    public List<PetResponseDto> getPetsByUser(
+            String uid
+    ) {
+        User requestedUser =
+                userRepository
+                        .findByUid(uid)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "User not found"
+                                )
+                        );
 
-        List<Workspace> workspaces = getAccessibleWorkspaces(user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        if (workspaces.isEmpty()) {
+        /*
+         * Este endpoint no debe utilizarse para
+         * consultar libremente las mascotas de
+         * cualquier usuario.
+         */
+        if (!requestedUser.getId()
+                .equals(currentUser.getId())) {
+
+            throw new InvalidOperationException(
+                    "You can only list pets from your own accessible workspaces"
+            );
+        }
+
+        List<Workspace> activeWorkspaces =
+                getAccessibleActiveWorkspaces(
+                        currentUser
+                );
+
+        if (activeWorkspaces.isEmpty()) {
             return List.of();
         }
 
-        Pageable pageable = PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable =
+                PageRequest.of(
+                        0,
+                        100,
+                        Sort.by(
+                                Sort.Direction.DESC,
+                                "createdAt"
+                        )
+                );
 
-        return petRepository.findByWorkspaceIn(workspaces, pageable)
+        return petRepository
+                .findByWorkspaceIn(
+                        activeWorkspaces,
+                        pageable
+                )
                 .stream()
                 .map(this::mapToDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Transactional(readOnly = true)
-    public PetQrDataDto getQrData(String pid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public PetQrDataDto getQrData(
+            String pid
+    ) {
+        Pet pet = findPet(pid);
+
+        User currentUser =
+                userService.getAuthenticatedUser();
+
+        planAccessService.checkCanViewPets(
+                pet.getWorkspace(),
+                currentUser
+        );
 
         return PetQrDataDto.builder()
                 .pid(pet.getPid())
@@ -221,191 +466,396 @@ public class PetService {
                 .build();
     }
 
+    /*
+     * =====================================================
+     * RESPONSABLES
+     * =====================================================
+     */
+
     @Transactional
-    public PetResponsibleResponseDto addResponsible(String pid, PetResponsibleRequestDto request) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public PetResponsibleResponseDto addResponsible(
+            String pid,
+            PetResponsibleRequestDto request
+    ) {
+        Pet pet = findPet(pid);
 
-        User currentUser = userService.getAuthenticatedUser();
-        Workspace workspace = pet.getWorkspace();
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, currentUser);
+        Workspace workspace =
+                pet.getWorkspace();
 
-        User targetUser = userRepository.findByUid(request.getUserUid())
-                .orElseThrow(() -> new ResourceNotFoundException("Target user not found"));
+        planAccessService.checkCanEditPet(
+                workspace,
+                currentUser
+        );
 
-        if (!workspaceMemberRepository.existsByWorkspaceAndUser(workspace, targetUser)) {
-            WorkspaceMember workspaceMember = WorkspaceMember.builder()
-                    .workspace(workspace)
-                    .user(targetUser)
-                    .role(mapToWorkspaceRole(request))
-                    .build();
+        User targetUser =
+                userRepository
+                        .findByUid(
+                                request.getUserUid()
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Target user not found"
+                                )
+                        );
 
-            workspaceMemberRepository.save(workspaceMember);
+        /*
+         * Ya no se crea automáticamente
+         * una membresía al workspace.
+         *
+         * Primero debe aceptar una invitación
+         * y ser miembro activo del grupo.
+         */
+        WorkspaceMember targetMembership =
+                workspaceMemberRepository
+                        .findByWorkspaceAndUserAndActiveTrue(
+                                workspace,
+                                targetUser
+                        )
+                        .orElseThrow(() ->
+                                new InvalidOperationException(
+                                        "User must be an active workspace member before becoming responsible for a pet"
+                                )
+                        );
+
+        if (petResponsibleRepository
+                .existsByPetAndUser(
+                        pet,
+                        targetUser
+                )) {
+
+            throw new DuplicateResourceException(
+                    "User is already responsible for this pet"
+            );
         }
 
-        if (petResponsibleRepository.existsByPetAndUser(pet, targetUser)) {
-            throw new DuplicateResourceException("User is already responsible for this pet");
-        }
+        validateResponsibleAssignment(
+                workspace,
+                targetMembership,
+                request
+        );
 
-        PetResponsible newResp = PetResponsible.builder()
-                .pet(pet)
-                .user(targetUser)
-                .accessLevel(request.getAccessLevel())
-                .responsibleRole(request.getResponsibleRole())
-                .build();
+        PetResponsible responsible =
+                PetResponsible.builder()
+                        .pet(pet)
+                        .user(targetUser)
+                        .accessLevel(
+                                request.getAccessLevel()
+                        )
+                        .responsibleRole(
+                                request.getResponsibleRole()
+                        )
+                        .build();
 
-        petResponsibleRepository.save(newResp);
+        PetResponsible savedResponsible =
+                petResponsibleRepository.save(
+                        responsible
+                );
 
-        eventPublisher.publishEvent(new UserAddedToPetEvent(targetUser.getEmail(), pet.getName()));
+        eventPublisher.publishEvent(
+                new UserAddedToPetEvent(
+                        targetUser.getEmail(),
+                        pet.getName()
+                )
+        );
 
-        return mapToRespDto(newResp);
+        return mapToResponsibleDto(
+                savedResponsible
+        );
     }
 
     @Transactional(readOnly = true)
-    public List<PetResponsibleResponseDto> getResponsibles(String pid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public List<PetResponsibleResponseDto>
+    getResponsibles(
+            String pid
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkCanAccessWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        return petResponsibleRepository.findByPet(pet)
+        planAccessService.checkCanViewPets(
+                pet.getWorkspace(),
+                currentUser
+        );
+
+        planAccessService.checkWorkspaceActive(
+                pet.getWorkspace()
+        );
+
+        return petResponsibleRepository
+                .findByPet(pet)
                 .stream()
-                .map(this::mapToRespDto)
-                .collect(Collectors.toList());
+                .map(this::mapToResponsibleDto)
+                .toList();
     }
 
     @Transactional
-    public void removeResponsible(String pid, String userUid) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public void removeResponsible(
+            String pid,
+            String userUid
+    ) {
+        Pet pet = findPet(pid);
 
-        User currentUser = userService.getAuthenticatedUser();
-        Workspace workspace = pet.getWorkspace();
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, currentUser);
+        Workspace workspace =
+                pet.getWorkspace();
 
-        User targetUser = userRepository.findByUid(userUid)
-                .orElseThrow(() -> new ResourceNotFoundException("Target user not found"));
+        planAccessService.checkCanEditPet(
+                workspace,
+                currentUser
+        );
 
-        PetResponsible targetResp = petResponsibleRepository.findByPetAndUser(pet, targetUser)
-                .orElseThrow(() -> new ResourceNotFoundException("Responsible not found"));
+        User targetUser =
+                userRepository
+                        .findByUid(userUid)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Target user not found"
+                                )
+                        );
 
-        if (targetResp.getResponsibleRole() == ResponsibleRole.OWNER) {
-            int ownerCount = petResponsibleRepository.countByPetAndResponsibleRole(
-                    pet,
-                    ResponsibleRole.OWNER
-            );
+        PetResponsible responsible =
+                petResponsibleRepository
+                        .findByPetAndUser(
+                                pet,
+                                targetUser
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Responsible not found"
+                                )
+                        );
+
+        if (responsible.getResponsibleRole()
+                == ResponsibleRole.OWNER) {
+
+            int ownerCount =
+                    petResponsibleRepository
+                            .countByPetAndResponsibleRole(
+                                    pet,
+                                    ResponsibleRole.OWNER
+                            );
 
             if (ownerCount <= 1) {
-                throw new InvalidOperationException("Cannot remove the last owner");
+                throw new InvalidOperationException(
+                        "Cannot remove the last pet owner"
+                );
             }
         }
 
-        petResponsibleRepository.delete(targetResp);
-
-        workspaceMemberRepository.findByWorkspaceAndUser(workspace, targetUser)
-                .ifPresent(member -> {
-                    if (member.getRole() == WorkspaceRole.OWNER) {
-                        throw new InvalidOperationException("Cannot remove the workspace owner from this endpoint");
-                    }
-                    workspaceMemberRepository.delete(member);
-                });
+        /*
+         * Solo se elimina la responsabilidad
+         * sobre esta mascota.
+         *
+         * La membresía del workspace se mantiene.
+         */
+        petResponsibleRepository.delete(
+                responsible
+        );
     }
 
+    /*
+     * =====================================================
+     * IMÁGENES
+     * =====================================================
+     */
+
     @Transactional
-    public PetResponseDto removeImage(String pid, String imageUrl) {
-        Pet pet = petRepository.findByPid(pid)
-                .orElseThrow(() -> new ResourceNotFoundException("Pet not found"));
+    public PetResponseDto removeImage(
+            String pid,
+            String imageUrl
+    ) {
+        Pet pet = findPet(pid);
 
-        User user = userService.getAuthenticatedUser();
-        checkWorkspaceActive(pet.getWorkspace());
-        checkCanManageWorkspace(pet.getWorkspace(), user);
+        User currentUser =
+                userService.getAuthenticatedUser();
 
-        List<String> currentImages = pet.getImagesUrl() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(pet.getImagesUrl());
+        planAccessService.checkCanEditPet(
+                pet.getWorkspace(),
+                currentUser
+        );
 
-        boolean removed = currentImages.removeIf(image -> image.equals(imageUrl));
+        if (!StringUtils.hasText(imageUrl)) {
+            throw new InvalidOperationException(
+                    "Image URL is required"
+            );
+        }
+
+        List<String> currentImages =
+                pet.getImagesUrl() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(
+                        pet.getImagesUrl()
+                );
+
+        boolean removed =
+                currentImages.removeIf(
+                        image ->
+                                imageUrl.equals(image)
+                );
 
         if (!removed) {
-            throw new ResourceNotFoundException("Image not found");
+            throw new ResourceNotFoundException(
+                    "Image not found"
+            );
         }
 
         pet.setImagesUrl(currentImages);
-        petRepository.save(pet);
 
-        return mapToDto(pet);
+        return mapToDto(
+                petRepository.save(pet)
+        );
     }
 
-    private Workspace resolveWorkspaceForCreate(String workspaceUid, User user) {
-        if (workspaceUid != null && !workspaceUid.isBlank()) {
-            Workspace workspace = workspaceRepository.findByUid(workspaceUid)
-                    .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"));
+    /*
+     * =====================================================
+     * MÉTODOS PRIVADOS
+     * =====================================================
+     */
 
-            checkCanAccessWorkspace(workspace, user);
+    private Pet findPet(
+            String pid
+    ) {
+        if (!StringUtils.hasText(pid)) {
+            throw new ResourceNotFoundException(
+                    "Pet PID is required"
+            );
+        }
+
+        return petRepository
+                .findByPid(pid.trim())
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Pet not found"
+                        )
+                );
+    }
+
+    private Workspace findWorkspace(
+            String workspaceUid
+    ) {
+        return workspaceRepository
+                .findByUid(workspaceUid.trim())
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Workspace not found"
+                        )
+                );
+    }
+
+    private Workspace resolveWorkspaceForCreate(
+            String workspaceUid,
+            User currentUser
+    ) {
+        if (StringUtils.hasText(workspaceUid)) {
+            Workspace workspace =
+                    findWorkspace(workspaceUid);
+
+            planAccessService
+                    .checkCanAccessWorkspace(
+                            workspace,
+                            currentUser
+                    );
+
             return workspace;
         }
 
-        return getPersonalWorkspace(user);
+        return getPersonalWorkspace(
+                currentUser
+        );
     }
 
-    private Workspace getPersonalWorkspace(User user) {
-        return workspaceMemberRepository.findByUser(user)
+    private Workspace getPersonalWorkspace(
+            User currentUser
+    ) {
+        return workspaceMemberRepository
+                .findByUserAndActiveTrue(
+                        currentUser
+                )
                 .stream()
-                .map(WorkspaceMember::getWorkspace)
-                .filter(workspace -> workspace.getPlanType() == PlanType.FREE)
-                .filter(workspace -> workspace.getOwner() != null && workspace.getOwner().getId().equals(user.getId()))
+                .map(
+                        WorkspaceMember::getWorkspace
+                )
+                .filter(workspace ->
+                        workspace.getPlanType()
+                                == PlanType.FREE
+                )
+                .filter(workspace ->
+                        workspace.getOwner() != null
+                                && workspace
+                                .getOwner()
+                                .getId()
+                                .equals(
+                                        currentUser.getId()
+                                )
+                )
                 .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("Personal workspace not found"));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Personal workspace not found"
+                        )
+                );
     }
 
-    private List<Workspace> getAccessibleWorkspaces(User user) {
-        return workspaceMemberRepository.findByUser(user)
+    private List<Workspace>
+    getAccessibleActiveWorkspaces(
+            User currentUser
+    ) {
+        return workspaceMemberRepository
+                .findByUserAndActiveTrue(
+                        currentUser
+                )
                 .stream()
-                .map(WorkspaceMember::getWorkspace)
+                .map(
+                        WorkspaceMember::getWorkspace
+                )
+                .filter(workspace ->
+                        workspace.getStatus()
+                                == WorkspaceStatus.ACTIVE
+                )
                 .distinct()
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    private WorkspaceMember checkCanAccessWorkspace(Workspace workspace, User user) {
-        return workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)
-                .orElseThrow(() -> new ForbiddenException("Not authorized to access this workspace"));
-    }
+    private void validateResponsibleAssignment(
+            Workspace workspace,
+            WorkspaceMember targetMembership,
+            PetResponsibleRequestDto request
+    ) {
+        if (request.getResponsibleRole()
+                == ResponsibleRole.OWNER
+                && targetMembership.getRole()
+                == com.dbp.uripet.workspace.domain.enums
+                .WorkspaceRole.MEMBER) {
 
-    private WorkspaceMember checkCanManageWorkspace(Workspace workspace, User user) {
-        WorkspaceMember member = checkCanAccessWorkspace(workspace, user);
-
-        if (member.getRole() != WorkspaceRole.OWNER && member.getRole() != WorkspaceRole.ADMIN) {
-            throw new ForbiddenException("Owner or admin role required");
+            throw new InvalidOperationException(
+                    "A workspace MEMBER cannot be assigned as pet OWNER"
+            );
         }
 
-        return member;
-    }
+        if (request.getAccessLevel()
+                == AccessLevel.EDITOR
+                && targetMembership.getRole()
+                == com.dbp.uripet.workspace.domain.enums
+                .WorkspaceRole.MEMBER) {
 
-    private void checkWorkspaceActive(Workspace workspace) {
-        if (workspace.getStatus() != WorkspaceStatus.ACTIVE) {
-            throw new ForbiddenException("Workspace is not active");
+            throw new InvalidOperationException(
+                    "A workspace MEMBER cannot receive EDITOR access to a pet"
+            );
         }
-    }
 
-    private void checkPetLimit(Workspace workspace) {
-        if (workspace.getPlanType() == PlanType.FREE && petRepository.countByWorkspace(workspace) >= 1) {
-            throw new InvalidOperationException("Free workspace can only have one pet");
-        }
-    }
+        if (workspace.getStatus()
+                != WorkspaceStatus.ACTIVE) {
 
-    private WorkspaceRole mapToWorkspaceRole(PetResponsibleRequestDto request) {
-        if (request.getResponsibleRole() == ResponsibleRole.OWNER) {
-            return WorkspaceRole.ADMIN;
+            throw new InvalidOperationException(
+                    "Workspace must be active"
+            );
         }
-        if (request.getAccessLevel() == AccessLevel.EDITOR) {
-            return WorkspaceRole.ADMIN;
-        }
-        return WorkspaceRole.MEMBER;
     }
 
     private List<String> resolveImages(
@@ -413,44 +863,91 @@ public class PetService {
             PetRequestDto request,
             List<String> existingImages
     ) {
-        List<String> finalImages = new ArrayList<>();
+        List<String> finalImages =
+                new ArrayList<>();
 
         if (request.getImagesUrl() != null) {
-            for (String imageUrl : request.getImagesUrl()) {
-                if (imageUrl != null && !imageUrl.isBlank() && !finalImages.contains(imageUrl)) {
-                    finalImages.add(imageUrl);
+            for (String imageUrl
+                    : request.getImagesUrl()) {
+
+                if (StringUtils.hasText(imageUrl)
+                        && !finalImages.contains(
+                        imageUrl.trim()
+                )) {
+                    finalImages.add(
+                            imageUrl.trim()
+                    );
                 }
             }
+
         } else if (existingImages != null) {
-            for (String imageUrl : existingImages) {
-                if (imageUrl != null && !imageUrl.isBlank() && !finalImages.contains(imageUrl)) {
+            for (String imageUrl
+                    : existingImages) {
+
+                if (StringUtils.hasText(imageUrl)
+                        && !finalImages.contains(
+                        imageUrl
+                )) {
                     finalImages.add(imageUrl);
                 }
             }
         }
 
-        if (request.getImages() != null && !request.getImages().isEmpty()) {
-            List<String> uploadedImages = imageStorageService.storePetImages(
-                    pet.getPid(),
-                    request.getImages()
-            );
+        if (request.getImages() != null
+                && !request.getImages().isEmpty()) {
 
-            for (String uploadedImage : uploadedImages) {
-                if (uploadedImage != null && !uploadedImage.isBlank() && !finalImages.contains(uploadedImage)) {
-                    finalImages.add(uploadedImage);
+            List<String> uploadedImages =
+                    imageStorageService
+                            .storePetImages(
+                                    pet.getPid(),
+                                    request.getImages()
+                            );
+
+            for (String uploadedImage
+                    : uploadedImages) {
+
+                if (StringUtils.hasText(
+                        uploadedImage
+                )
+                        && !finalImages.contains(
+                        uploadedImage
+                )) {
+
+                    finalImages.add(
+                            uploadedImage
+                    );
                 }
             }
         }
 
         if (finalImages.size() > 3) {
-            throw new InvalidOperationException("A pet can have at most 3 images");
+            throw new InvalidOperationException(
+                    "A pet can have at most 3 images"
+            );
         }
 
         return finalImages;
     }
 
-    public PetResponseDto mapToDto(Pet pet) {
-        Workspace workspace = pet.getWorkspace();
+    private String cleanText(
+            String value
+    ) {
+        if (value == null) {
+            return null;
+        }
+
+        String cleaned = value.trim();
+
+        return cleaned.isBlank()
+                ? null
+                : cleaned;
+    }
+
+    public PetResponseDto mapToDto(
+            Pet pet
+    ) {
+        Workspace workspace =
+                pet.getWorkspace();
 
         return PetResponseDto.builder()
                 .pid(pet.getPid())
@@ -461,24 +958,70 @@ public class PetService {
                 .weight(pet.getWeight())
                 .color(pet.getColor())
                 .qrCode(pet.getQrCode())
-                .emergencyContact(pet.getEmergencyContact())
-                .imagesUrl(pet.getImagesUrl())
-                .createdAt(pet.getCreatedAt())
-                .workspaceUid(workspace != null ? workspace.getUid() : null)
-                .workspaceName(workspace != null ? workspace.getName() : null)
-                .planType(workspace != null ? workspace.getPlanType() : null)
-                .workspaceStatus(workspace != null ? workspace.getStatus() : null)
+                .emergencyContact(
+                        pet.getEmergencyContact()
+                )
+                .imagesUrl(
+                        pet.getImagesUrl()
+                )
+                .createdAt(
+                        pet.getCreatedAt()
+                )
+                .workspaceUid(
+                        workspace != null
+                                ? workspace.getUid()
+                                : null
+                )
+                .workspaceName(
+                        workspace != null
+                                ? workspace.getName()
+                                : null
+                )
+                .planType(
+                        workspace != null
+                                ? workspace.getPlanType()
+                                : null
+                )
+                .workspaceStatus(
+                        workspace != null
+                                ? workspace.getStatus()
+                                : null
+                )
                 .build();
     }
 
-    private PetResponsibleResponseDto mapToRespDto(PetResponsible resp) {
+    private PetResponsibleResponseDto
+    mapToResponsibleDto(
+            PetResponsible responsible
+    ) {
         return PetResponsibleResponseDto.builder()
-                .userUid(resp.getUser().getUid())
-                .userName(resp.getUser().getName())
-                .userEmail(resp.getUser().getEmail())
-                .accessLevel(resp.getAccessLevel())
-                .responsibleRole(resp.getResponsibleRole())
-                .createdAt(resp.getCreatedAt())
+                .userUid(
+                        responsible
+                                .getUser()
+                                .getUid()
+                )
+                .userName(
+                        responsible
+                                .getUser()
+                                .getName()
+                )
+                .userEmail(
+                        responsible
+                                .getUser()
+                                .getEmail()
+                )
+                .accessLevel(
+                        responsible
+                                .getAccessLevel()
+                )
+                .responsibleRole(
+                        responsible
+                                .getResponsibleRole()
+                )
+                .createdAt(
+                        responsible
+                                .getCreatedAt()
+                )
                 .build();
     }
 }

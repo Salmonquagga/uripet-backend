@@ -42,7 +42,8 @@ public class WorkspaceService {
 
     private final PetRepository petRepository;
 
-    private final PlanAccessService planAccessService;
+    private final PlanAccessService
+            planAccessService;
 
     @Transactional
     public WorkspaceResponseDto
@@ -75,7 +76,9 @@ public class WorkspaceService {
                                     )
                                     .build();
 
-                    workspaceRepository.save(workspace);
+                    workspaceRepository.save(
+                            workspace
+                    );
 
                     WorkspaceMember member =
                             WorkspaceMember.builder()
@@ -87,7 +90,9 @@ public class WorkspaceService {
                                     .active(true)
                                     .build();
 
-                    workspaceMemberRepository.save(member);
+                    workspaceMemberRepository.save(
+                            member
+                    );
 
                     return toResponse(
                             workspace,
@@ -107,7 +112,8 @@ public class WorkspaceService {
     }
 
     @Transactional(readOnly = true)
-    public List<WorkspaceResponseDto> getMyWorkspaces(
+    public List<WorkspaceResponseDto>
+    getMyWorkspaces(
             User currentUser
     ) {
         return workspaceMemberRepository
@@ -231,7 +237,16 @@ public class WorkspaceService {
                         currentUser
                 );
 
-        planAccessService.checkCanManageMembers(
+        /*
+         * CAMBIO DEL BLOQUE 8:
+         *
+         * Antes se utilizaba:
+         * checkCanManageMembers(...)
+         *
+         * Ahora también valida el límite
+         * máximo de miembros del plan.
+         */
+        planAccessService.checkCanAddMember(
                 workspace,
                 currentUser
         );
@@ -436,7 +451,9 @@ public class WorkspaceService {
 
         member.setActive(false);
 
-        workspaceMemberRepository.save(member);
+        workspaceMemberRepository.save(
+                member
+        );
     }
 
     @Transactional
@@ -556,14 +573,18 @@ public class WorkspaceService {
             User user
     ) {
         workspace.setOwner(user);
+
         workspace.setPlanType(
                 PlanType.FREE
         );
+
         workspace.setStatus(
                 WorkspaceStatus.ACTIVE
         );
 
-        workspaceRepository.save(workspace);
+        workspaceRepository.save(
+                workspace
+        );
 
         WorkspaceMember ownerMember =
                 workspaceMemberRepository
@@ -587,6 +608,7 @@ public class WorkspaceService {
             ownerMember.setRole(
                     WorkspaceRole.OWNER
             );
+
             ownerMember.setActive(true);
         }
 
@@ -606,7 +628,9 @@ public class WorkspaceService {
             User currentUser
     ) {
         Workspace workspace =
-                getWorkspace(workspaceUid);
+                getWorkspace(
+                        workspaceUid
+                );
 
         planAccessService.checkCanAccessWorkspace(
                 workspace,
@@ -638,7 +662,9 @@ public class WorkspaceService {
     private Workspace getWorkspace(
             String workspaceUid
     ) {
-        if (!StringUtils.hasText(workspaceUid)) {
+        if (!StringUtils.hasText(
+                workspaceUid
+        )) {
             throw new ValidationException(
                     "Workspace UID is required"
             );
@@ -658,7 +684,9 @@ public class WorkspaceService {
     private User getUser(
             String userUid
     ) {
-        if (!StringUtils.hasText(userUid)) {
+        if (!StringUtils.hasText(
+                userUid
+        )) {
             throw new ValidationException(
                     "User UID is required"
             );
@@ -797,10 +825,11 @@ public class WorkspaceService {
                         == WorkspaceStatus.ACTIVE;
 
         WorkspacePermissionsDto permissions =
-                planAccessService.buildPermissions(
-                        workspace,
-                        currentUser
-                );
+                planAccessService
+                        .buildPermissions(
+                                workspace,
+                                currentUser
+                        );
 
         return WorkspaceResponseDto.builder()
                 .uid(workspace.getUid())
@@ -887,7 +916,9 @@ public class WorkspaceService {
                                 .getEmail()
                 )
                 .role(
-                        member.getRole().name()
+                        member
+                                .getRole()
+                                .name()
                 )
                 .active(
                         member.isActive()

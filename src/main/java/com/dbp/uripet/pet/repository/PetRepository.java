@@ -10,23 +10,44 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface PetRepository extends JpaRepository<Pet, Long> {
-    Optional<Pet> findByPid(String pid);
-    Optional<Pet> findByQrCode(UUID qrCode);
+public interface PetRepository
+        extends JpaRepository<Pet, Long> {
 
-    long countByWorkspace(Workspace workspace);
+    Optional<Pet> findByPid(
+            String pid
+    );
 
-    Page<Pet> findByWorkspace(Workspace workspace, Pageable pageable);
+    Optional<Pet> findByQrCode(
+            UUID qrCode
+    );
 
-    Page<Pet> findByWorkspaceAndNameContainingIgnoreCase(
+    long countByWorkspace(
+            Workspace workspace
+    );
+
+    List<Pet> findByWorkspaceOrderByCreatedAtAsc(
+            Workspace workspace
+    );
+
+    Page<Pet> findByWorkspace(
+            Workspace workspace,
+            Pageable pageable
+    );
+
+    Page<Pet>
+    findByWorkspaceAndNameContainingIgnoreCase(
             Workspace workspace,
             String name,
             Pageable pageable
     );
 
-    Page<Pet> findByWorkspaceIn(List<Workspace> workspaces, Pageable pageable);
+    Page<Pet> findByWorkspaceIn(
+            List<Workspace> workspaces,
+            Pageable pageable
+    );
 
-    Page<Pet> findByWorkspaceInAndNameContainingIgnoreCase(
+    Page<Pet>
+    findByWorkspaceInAndNameContainingIgnoreCase(
             List<Workspace> workspaces,
             String name,
             Pageable pageable

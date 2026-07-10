@@ -33,7 +33,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class WorkspaceInvitationService {
 
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceRepository
+            workspaceRepository;
 
     private final WorkspaceInvitationRepository
             workspaceInvitationRepository;
@@ -43,12 +44,14 @@ public class WorkspaceInvitationService {
 
     private final UserRepository userRepository;
 
-    private final PlanAccessService planAccessService;
+    private final PlanAccessService
+            planAccessService;
 
     private final EmailService emailService;
 
     @Transactional
-    public WorkspaceInvitationResponseDto createInvitation(
+    public WorkspaceInvitationResponseDto
+    createInvitation(
             String workspaceUid,
             WorkspaceInvitationRequestDto request,
             User currentUser
@@ -78,7 +81,9 @@ public class WorkspaceInvitationService {
         }
 
         String email =
-                normalizeEmail(request.getEmail());
+                normalizeEmail(
+                        request.getEmail()
+                );
 
         if (email.equalsIgnoreCase(
                 currentUser.getEmail()
@@ -132,7 +137,9 @@ public class WorkspaceInvitationService {
         }
 
         WorkspaceRole role =
-                parseInvitableRole(request.getRole());
+                parseInvitableRole(
+                        request.getRole()
+                );
 
         WorkspaceInvitation invitation =
                 WorkspaceInvitation.builder()
@@ -154,9 +161,13 @@ public class WorkspaceInvitationService {
                         invitation
                 );
 
-        sendInvitationEmail(savedInvitation);
+        sendInvitationEmail(
+                savedInvitation
+        );
 
-        return toResponse(savedInvitation);
+        return toResponse(
+                savedInvitation
+        );
     }
 
     @Transactional(readOnly = true)
@@ -197,12 +208,15 @@ public class WorkspaceInvitationService {
     }
 
     @Transactional
-    public WorkspaceMemberResponseDto acceptInvitation(
+    public WorkspaceMemberResponseDto
+    acceptInvitation(
             String token,
             User currentUser
     ) {
         WorkspaceInvitation invitation =
-                findInvitationByToken(token);
+                findInvitationByToken(
+                        token
+                );
 
         validateInvitationForUser(
                 invitation,
@@ -217,6 +231,28 @@ public class WorkspaceInvitationService {
 
             throw new InvalidOperationException(
                     "Workspace is not active"
+            );
+        }
+
+        /*
+         * CAMBIO DEL BLOQUE 8:
+         *
+         * La validación del límite se hace
+         * al aceptar la invitación.
+         *
+         * Una invitación pendiente todavía
+         * no ocupa un espacio dentro del plan.
+         */
+        boolean alreadyActiveMember =
+                workspaceMemberRepository
+                        .existsByWorkspaceAndUserAndActiveTrue(
+                                workspace,
+                                currentUser
+                        );
+
+        if (!alreadyActiveMember) {
+            planAccessService.checkMemberLimit(
+                    workspace
             );
         }
 
@@ -243,7 +279,9 @@ public class WorkspaceInvitationService {
                     invitation
             );
 
-            return toMemberResponse(member);
+            return toMemberResponse(
+                    member
+            );
         }
 
         if (member == null) {
@@ -265,7 +303,9 @@ public class WorkspaceInvitationService {
         }
 
         WorkspaceMember savedMember =
-                workspaceMemberRepository.save(member);
+                workspaceMemberRepository.save(
+                        member
+                );
 
         invitation.setStatus(
                 WorkspaceInvitationStatus.ACCEPTED
@@ -279,16 +319,21 @@ public class WorkspaceInvitationService {
                 invitation
         );
 
-        return toMemberResponse(savedMember);
+        return toMemberResponse(
+                savedMember
+        );
     }
 
     @Transactional
-    public WorkspaceInvitationResponseDto rejectInvitation(
+    public WorkspaceInvitationResponseDto
+    rejectInvitation(
             String token,
             User currentUser
     ) {
         WorkspaceInvitation invitation =
-                findInvitationByToken(token);
+                findInvitationByToken(
+                        token
+                );
 
         validateInvitationForUser(
                 invitation,
@@ -308,11 +353,14 @@ public class WorkspaceInvitationService {
                         invitation
                 );
 
-        return toResponse(savedInvitation);
+        return toResponse(
+                savedInvitation
+        );
     }
 
     @Transactional
-    public WorkspaceInvitationResponseDto cancelInvitation(
+    public WorkspaceInvitationResponseDto
+    cancelInvitation(
             String workspaceUid,
             String invitationUid,
             User currentUser
@@ -327,7 +375,9 @@ public class WorkspaceInvitationService {
 
         WorkspaceInvitation invitation =
                 workspaceInvitationRepository
-                        .findByUid(invitationUid)
+                        .findByUid(
+                                invitationUid
+                        )
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
                                         "Workspace invitation not found"
@@ -337,7 +387,9 @@ public class WorkspaceInvitationService {
         if (!invitation
                 .getWorkspace()
                 .getId()
-                .equals(workspace.getId())) {
+                .equals(
+                        workspace.getId()
+                )) {
 
             throw new ForbiddenException(
                     "Invitation does not belong to this workspace"
@@ -367,7 +419,8 @@ public class WorkspaceInvitationService {
         );
     }
 
-    private void expirePreviousInvitationIfNecessary(
+    private void
+    expirePreviousInvitationIfNecessary(
             Workspace workspace,
             String email
     ) {
@@ -441,7 +494,8 @@ public class WorkspaceInvitationService {
         }
     }
 
-    private WorkspaceInvitation findInvitationByToken(
+    private WorkspaceInvitation
+    findInvitationByToken(
             String token
     ) {
         if (!StringUtils.hasText(token)) {
@@ -451,7 +505,9 @@ public class WorkspaceInvitationService {
         }
 
         return workspaceInvitationRepository
-                .findByToken(token.trim())
+                .findByToken(
+                        token.trim()
+                )
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Workspace invitation not found"
@@ -462,14 +518,18 @@ public class WorkspaceInvitationService {
     private Workspace getWorkspace(
             String workspaceUid
     ) {
-        if (!StringUtils.hasText(workspaceUid)) {
+        if (!StringUtils.hasText(
+                workspaceUid
+        )) {
             throw new ValidationException(
                     "Workspace UID is required"
             );
         }
 
         return workspaceRepository
-                .findByUid(workspaceUid.trim())
+                .findByUid(
+                        workspaceUid.trim()
+                )
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Workspace not found"
@@ -515,15 +575,20 @@ public class WorkspaceInvitationService {
             );
         }
 
-        return email.trim().toLowerCase();
+        return email
+                .trim()
+                .toLowerCase();
     }
 
     private boolean isExpired(
             WorkspaceInvitation invitation
     ) {
         return invitation.getExpiresAt() != null
-                && invitation.getExpiresAt()
-                .isBefore(ZonedDateTime.now());
+                && invitation
+                .getExpiresAt()
+                .isBefore(
+                        ZonedDateTime.now()
+                );
     }
 
     private void sendInvitationEmail(
@@ -560,11 +625,14 @@ public class WorkspaceInvitationService {
         );
     }
 
-    private WorkspaceInvitationResponseDto toResponse(
+    private WorkspaceInvitationResponseDto
+    toResponse(
             WorkspaceInvitation invitation
     ) {
         return WorkspaceInvitationResponseDto.builder()
-                .uid(invitation.getUid())
+                .uid(
+                        invitation.getUid()
+                )
                 .workspaceUid(
                         invitation
                                 .getWorkspace()
@@ -576,7 +644,8 @@ public class WorkspaceInvitationService {
                                 .getName()
                 )
                 .invitedEmail(
-                        invitation.getInvitedEmail()
+                        invitation
+                                .getInvitedEmail()
                 )
                 .invitedByUid(
                         invitation
@@ -589,12 +658,18 @@ public class WorkspaceInvitationService {
                                 .getName()
                 )
                 .role(
-                        invitation.getRole().name()
+                        invitation
+                                .getRole()
+                                .name()
                 )
                 .status(
-                        invitation.getStatus().name()
+                        invitation
+                                .getStatus()
+                                .name()
                 )
-                .expired(isExpired(invitation))
+                .expired(
+                        isExpired(invitation)
+                )
                 .expiresAt(
                         invitation.getExpiresAt()
                 )
@@ -633,7 +708,9 @@ public class WorkspaceInvitationService {
                                 .getEmail()
                 )
                 .role(
-                        member.getRole().name()
+                        member
+                                .getRole()
+                                .name()
                 )
                 .active(
                         member.isActive()

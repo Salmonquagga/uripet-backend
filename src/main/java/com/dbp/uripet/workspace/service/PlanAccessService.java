@@ -2,7 +2,6 @@ package com.dbp.uripet.workspace.service;
 
 import com.dbp.uripet.config.error.ForbiddenException;
 import com.dbp.uripet.config.error.InvalidOperationException;
-import com.dbp.uripet.pet.repository.PetRepository;
 import com.dbp.uripet.user.domain.User;
 import com.dbp.uripet.workspace.domain.Workspace;
 import com.dbp.uripet.workspace.domain.WorkspaceMember;
@@ -22,11 +21,9 @@ public class PlanAccessService {
     private final WorkspaceMemberRepository
             workspaceMemberRepository;
 
-    private final PetRepository petRepository;
+    private final PlanLimitsService
+            planLimitsService;
 
-    /*
-     * Verifica que el usuario tenga una membresía activa.
-     */
     public WorkspaceMember checkCanAccessWorkspace(
             Workspace workspace,
             User user
@@ -55,17 +52,18 @@ public class PlanAccessService {
                 );
     }
 
-    /*
-     * OWNER y ADMIN pueden administrar contenido.
-     */
     public WorkspaceMember checkCanManageWorkspace(
             Workspace workspace,
             User user
     ) {
         WorkspaceMember member =
-                checkCanAccessWorkspace(workspace, user);
+                checkCanAccessWorkspace(
+                        workspace,
+                        user
+                );
 
-        if (member.getRole() != WorkspaceRole.OWNER
+        if (member.getRole()
+                != WorkspaceRole.OWNER
                 && member.getRole()
                 != WorkspaceRole.ADMIN) {
 
@@ -77,18 +75,19 @@ public class PlanAccessService {
         return member;
     }
 
-    /*
-     * Solamente OWNER administra pagos,
-     * suscripción, cancelación y reactivación.
-     */
     public WorkspaceMember checkWorkspaceOwner(
             Workspace workspace,
             User user
     ) {
         WorkspaceMember member =
-                checkCanAccessWorkspace(workspace, user);
+                checkCanAccessWorkspace(
+                        workspace,
+                        user
+                );
 
-        if (member.getRole() != WorkspaceRole.OWNER) {
+        if (member.getRole()
+                != WorkspaceRole.OWNER) {
+
             throw new ForbiddenException(
                     "Workspace owner role required"
             );
@@ -110,14 +109,14 @@ public class PlanAccessService {
         }
     }
 
-    /*
-     * Mascotas.
-     */
     public void checkCanViewPets(
             Workspace workspace,
             User user
     ) {
-        checkCanAccessWorkspace(workspace, user);
+        checkCanAccessWorkspace(
+                workspace,
+                user
+        );
     }
 
     public void checkCanCreatePet(
@@ -125,7 +124,12 @@ public class PlanAccessService {
             User user
     ) {
         checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
+
+        checkCanManageWorkspace(
+                workspace,
+                user
+        );
+
         checkPetLimit(workspace);
     }
 
@@ -134,7 +138,11 @@ public class PlanAccessService {
             User user
     ) {
         checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
+
+        checkCanManageWorkspace(
+                workspace,
+                user
+        );
     }
 
     public void checkCanDeletePet(
@@ -142,17 +150,22 @@ public class PlanAccessService {
             User user
     ) {
         checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
+
+        checkCanManageWorkspace(
+                workspace,
+                user
+        );
     }
 
-    /*
-     * Historial médico.
-     */
     public void checkCanViewHealthRecords(
             Workspace workspace,
             User user
     ) {
-        checkCanAccessWorkspace(workspace, user);
+        checkCanAccessWorkspace(
+                workspace,
+                user
+        );
+
         checkWorkspaceActive(workspace);
     }
 
@@ -161,17 +174,21 @@ public class PlanAccessService {
             User user
     ) {
         checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
+
+        checkCanManageWorkspace(
+                workspace,
+                user
+        );
     }
 
-    /*
-     * Miembros.
-     */
     public void checkCanViewMembers(
             Workspace workspace,
             User user
     ) {
-        checkCanAccessWorkspace(workspace, user);
+        checkCanAccessWorkspace(
+                workspace,
+                user
+        );
     }
 
     public void checkCanManageMembers(
@@ -179,58 +196,75 @@ public class PlanAccessService {
             User user
     ) {
         checkWorkspaceActive(workspace);
-        checkCanManageWorkspace(workspace, user);
 
-        if (workspace.getPlanType() == PlanType.FREE) {
+        checkCanManageWorkspace(
+                workspace,
+                user
+        );
+
+        if (workspace.getPlanType()
+                == PlanType.FREE) {
+
             throw new InvalidOperationException(
                     "Free workspace cannot have additional members"
             );
         }
     }
 
-    /*
-     * Facturación.
-     */
+    public void checkCanAddMember(
+            Workspace workspace,
+            User user
+    ) {
+        checkCanManageMembers(
+                workspace,
+                user
+        );
+
+        checkMemberLimit(workspace);
+    }
+
     public void checkCanManageBilling(
             Workspace workspace,
             User user
     ) {
-        checkWorkspaceOwner(workspace, user);
+        checkWorkspaceOwner(
+                workspace,
+                user
+        );
 
-        if (workspace.getPlanType() == PlanType.FREE) {
+        if (workspace.getPlanType()
+                == PlanType.FREE) {
+
             throw new InvalidOperationException(
                     "Free workspace does not have billing"
             );
         }
     }
 
-    /*
-     * Límite conocido y definitivo del plan gratuito.
-     *
-     * Los límites de FAMILY y PREMIUM se agregarán
-     * cuando fijemos sus cantidades comerciales.
-     */
     public void checkPetLimit(
             Workspace workspace
     ) {
-        if (workspace.getPlanType() == PlanType.FREE
-                && petRepository.countByWorkspace(workspace)
-                >= 1) {
-
-            throw new InvalidOperationException(
-                    "Free workspace can only have one pet"
-            );
-        }
+        planLimitsService.checkPetLimit(
+                workspace
+        );
     }
 
-    /*
-     * Funciones por plan.
-     */
+    public void checkMemberLimit(
+            Workspace workspace
+    ) {
+        planLimitsService.checkMemberLimit(
+                workspace
+        );
+    }
+
     public void checkFeature(
             Workspace workspace,
             PlanFeature feature
     ) {
-        if (!hasFeature(workspace, feature)) {
+        if (!hasFeature(
+                workspace,
+                feature
+        )) {
             throw new ForbiddenException(
                     "Feature "
                             + feature.name()
@@ -250,19 +284,13 @@ public class PlanAccessService {
             return false;
         }
 
-        PlanType planType = workspace.getPlanType();
+        PlanType planType =
+                workspace.getPlanType();
 
         return switch (feature) {
-            /*
-             * QR básico y privacidad disponibles
-             * para todos.
-             */
             case BASIC_QR,
                  QR_PRIVACY_SETTINGS -> true;
 
-            /*
-             * Funciones avanzadas.
-             */
             case PUBLIC_HEALTH_SUMMARY,
                  CUSTOM_QR_COLORS,
                  CUSTOM_QR_STYLE,
@@ -277,9 +305,6 @@ public class PlanAccessService {
         };
     }
 
-    /*
-     * Permisos que consumirá directamente el frontend.
-     */
     public WorkspacePermissionsDto buildPermissions(
             Workspace workspace,
             User user
@@ -308,11 +333,22 @@ public class PlanAccessService {
                 member.getRole()
                         == WorkspaceRole.ADMIN;
 
-        boolean manager = owner || admin;
+        boolean manager =
+                owner || admin;
 
         boolean free =
                 workspace.getPlanType()
                         == PlanType.FREE;
+
+        boolean petLimitReached =
+                planLimitsService
+                        .getLimits(workspace)
+                        .isPetLimitReached();
+
+        boolean memberLimitReached =
+                planLimitsService
+                        .getLimits(workspace)
+                        .isMemberLimitReached();
 
         boolean mayReactivate =
                 owner
@@ -333,9 +369,17 @@ public class PlanAccessService {
                 .canViewPreview(true)
 
                 .canViewPets(true)
-                .canCreatePets(active && manager)
-                .canEditPets(active && manager)
-                .canDeletePets(active && manager)
+                .canCreatePets(
+                        active
+                                && manager
+                                && !petLimitReached
+                )
+                .canEditPets(
+                        active && manager
+                )
+                .canDeletePets(
+                        active && manager
+                )
 
                 .canViewHealthRecords(active)
                 .canManageHealthRecords(
@@ -344,14 +388,21 @@ public class PlanAccessService {
 
                 .canViewMembers(true)
                 .canManageMembers(
-                        active && manager && !free
+                        active
+                                && manager
+                                && !free
+                                && !memberLimitReached
                 )
 
-                .canManageBilling(owner && !free)
+                .canManageBilling(
+                        owner && !free
+                )
 
                 .canRenameWorkspace(manager)
                 .canCancelSubscription(
-                        active && owner && !free
+                        active
+                                && owner
+                                && !free
                 )
                 .canReactivateSubscription(
                         mayReactivate
