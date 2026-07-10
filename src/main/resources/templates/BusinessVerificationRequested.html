@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Solicitud recibida</title>
+</head>
+<body>
+<h2>Solicitud de verificacion recibida</h2>
+<p>Hola <span th:text="${requesterName}">usuario</span>,</p>
+<p>Recibimos tu solicitud para verificar:</p>
+<ul>
+    <li><strong>Nombre:</strong> <span th:text="${businessName}">Negocio</span></li>
+    <li><strong>Tipo:</strong> <span th:text="${businessType}">Tipo</span></li>
+    <li><strong>Codigo de solicitud:</strong> <span th:text="${requestUid}">BVR-00000000</span></li>
+</ul>
+<p>El equipo de UriPet revisara tu informacion y te notificara el resultado.</p>
+</body>
+</html>

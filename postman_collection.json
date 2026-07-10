@@ -1,0 +1,992 @@
+{
+  "info": {
+    "_postman_id": "7727b20b-da26-44f4-8b39-facea9d469f8",
+    "name": "UriPet API - DBP Project 1",
+    "description": "Colección de Postman para documentar y probar la API REST de UriPet. Incluye endpoints de autenticación, QR login, usuarios, mascotas, responsables e historial de salud. Usar primero Register/Login para obtener el token JWT y luego ejecutar endpoints protegidos con Bearer Token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "uid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recordId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "responsibleUid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "qr_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth Controller",
+      "description": "Endpoints de registro, login y verificación de cuenta.",
+      "item": [
+        {
+          "name": "Register user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Registra un usuario nuevo en UriPet. Valida nombre, correo, contraseña y teléfono. Devuelve token JWT, uid y estado de verificación.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adri Test\",\n  \"email\": \"adri.test@example.com\",\n  \"password\": \"Password123\",\n  \"phone\": \"+51999999999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Inicia sesión con email y contraseña. Si es exitoso, guarda automáticamente el token JWT en la variable {{token}}.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"adri.test@example.com\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login exitoso', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "}",
+                  "if (json.uid) {",
+                  "    pm.collectionVariables.set('uid', json.uid);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "verify"
+              ]
+            },
+            "description": "Verifica la cuenta del usuario usando el código enviado por correo. Requiere Bearer Token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"adri.test@example.com\",\n  \"code\": \"1234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resend verification code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/resend-verification",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "resend-verification"
+              ]
+            },
+            "description": "Reenvía el código de verificación al correo del usuario autenticado. Requiere Bearer Token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "QR Login Controller",
+      "description": "Endpoints para login mediante código QR.",
+      "item": [
+        {
+          "name": "Create QR login session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/qr/session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "qr",
+                "session"
+              ]
+            },
+            "description": "Crea una sesión de login por código QR. Guarda el token QR en {{qr_token}} para poder consultar o autorizar la sesión.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('QR session creada', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set('qr_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authorize QR session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/qr/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "qr",
+                "authorize"
+              ]
+            },
+            "description": "Autoriza una sesión QR usando un usuario autenticado. Requiere Bearer Token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{qr_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get QR session status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/qr/status/{{qr_token}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "qr",
+                "status",
+                "{{qr_token}}"
+              ]
+            },
+            "description": "Consulta el estado de una sesión QR: PENDING, AUTHORIZED o EXPIRED.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Controller",
+      "description": "Endpoints de gestión de usuario autenticado.",
+      "item": [
+        {
+          "name": "Get user by UID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/{{uid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user",
+                "{{uid}}"
+              ]
+            },
+            "description": "Obtiene información pública/básica de un usuario por UID. Requiere Bearer Token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user",
+                "me"
+              ]
+            },
+            "description": "Obtiene la información del usuario autenticado según el token JWT.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update current user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user",
+                "me"
+              ]
+            },
+            "description": "Actualiza los datos del usuario autenticado. En el código usa RegisterRequestDto, por eso se incluyen name, email, password y phone.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adri Actualizada\",\n  \"email\": \"adri.test@example.com\",\n  \"password\": \"Password123\",\n  \"phone\": \"+51988888888\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete current user",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user",
+                "me"
+              ]
+            },
+            "description": "Elimina la cuenta del usuario autenticado. Devuelve 204 No Content si la operación fue exitosa.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pet Controller",
+      "description": "Endpoints para crear, consultar, actualizar mascotas y gestionar responsables.",
+      "item": [
+        {
+          "name": "Create pet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets"
+              ]
+            },
+            "description": "Crea una mascota asociada al usuario autenticado. Guarda el pid en {{pid}} para usarlo en los siguientes endpoints.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Firulais\",\n  \"species\": \"Dog\",\n  \"breed\": \"Mestizo\",\n  \"birthDate\": \"2022-05-01\",\n  \"weight\": 12.5,\n  \"color\": \"Marrón\",\n  \"emergencyContact\": \"+51999999999\",\n  \"imagesUrl\": [\n    \"https://example.com/firulais.jpg\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mascota creada', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json.pid) {",
+                  "    pm.collectionVariables.set('pid', json.pid);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get pet by PID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}"
+              ]
+            },
+            "description": "Obtiene el detalle de una mascota por su identificador pid.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update pet",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}"
+              ]
+            },
+            "description": "Actualiza los datos principales de una mascota existente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Firulais Jr\",\n  \"species\": \"Dog\",\n  \"breed\": \"Mestizo\",\n  \"birthDate\": \"2022-05-01\",\n  \"weight\": 13.0,\n  \"color\": \"Marrón claro\",\n  \"emergencyContact\": \"+51999999999\",\n  \"imagesUrl\": [\n    \"https://example.com/firulais-updated.jpg\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get my pets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "me"
+              ]
+            },
+            "description": "Lista las mascotas asociadas al usuario autenticado.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get pets by user UID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/user/{{uid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "user",
+                "{{uid}}"
+              ]
+            },
+            "description": "Lista las mascotas relacionadas con un usuario específico.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get pet QR data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/qr-data",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "qr-data"
+              ]
+            },
+            "description": "Obtiene la información mínima usada para generar/validar el QR público de una mascota.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add responsible to pet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/responsibles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "responsibles"
+              ]
+            },
+            "description": "Agrega un responsable a una mascota con nivel de acceso y rol. Reemplaza {{responsibleUid}} por el UID real de otro usuario.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userUid\": \"{{responsibleUid}}\",\n  \"accessLevel\": \"EDITOR\",\n  \"responsibleRole\": \"CAREGIVER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get pet responsibles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/responsibles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "responsibles"
+              ]
+            },
+            "description": "Lista los responsables asociados a una mascota.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove responsible from pet",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/responsibles/{{responsibleUid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "responsibles",
+                "{{responsibleUid}}"
+              ]
+            },
+            "description": "Elimina un responsable de la mascota. Devuelve 204 No Content si se elimina correctamente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health Controller",
+      "description": "Endpoints de historial médico o sanitario de las mascotas.",
+      "item": [
+        {
+          "name": "Create health record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/health-records",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "health-records"
+              ]
+            },
+            "description": "Crea un registro de salud para una mascota. Tipos posibles: VACCINE, DISEASE, ALLERGY, SURGERY, NOTE, MEDICATION.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"VACCINE\",\n  \"title\": \"Vacuna antirrábica\",\n  \"description\": \"Aplicada en veterinaria local.\",\n  \"date\": \"2026-05-20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Registro de salud creado', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('recordId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get health records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/health-records",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "health-records"
+              ]
+            },
+            "description": "Lista los registros de salud de una mascota. Puede usarse con query param type para filtrar.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get health records filtered by type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/health-records?type=VACCINE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "health-records?type=VACCINE"
+              ]
+            },
+            "description": "Lista registros de salud filtrados por tipo, por ejemplo VACCINE.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update health record",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pets/{{pid}}/health-records/{{recordId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pets",
+                "{{pid}}",
+                "health-records",
+                "{{recordId}}"
+              ]
+            },
+            "description": "Actualiza un registro de salud específico de una mascota. Requiere Bearer Token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"VACCINE\",\n  \"title\": \"Vacuna antirrábica actualizada\",\n  \"description\": \"Registro actualizado desde Postman.\",\n  \"date\": \"2026-05-20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

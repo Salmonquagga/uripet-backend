@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Solicitud rechazada</title>
+</head>
+<body>
+<h2>Tu solicitud fue revisada</h2>
+<p>Hola <span th:text="${userName}">usuario</span>,</p>
+<p>Tu solicitud para <strong th:text="${businessName}">Negocio</strong> no fue aprobada por ahora.</p>
+<p><strong>Comentario:</strong></p>
+<p th:text="${reviewComment}">Sin comentario adicional.</p>
+<p>Puedes revisar la informacion y volver a enviar una solicitud cuando corresponda.</p>
+</body>
+</html>

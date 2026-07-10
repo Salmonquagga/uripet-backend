@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Solicitud aprobada</title>
+</head>
+<body>
+<h2>Tu solicitud fue aprobada</h2>
+<p>Hola <span th:text="${userName}">usuario</span>,</p>
+<p>Tu solicitud para <strong th:text="${businessName}">Negocio</strong> fue aprobada.</p>
+<p>Ya se creo tu espacio de trabajo verificado en UriPet.</p>
+<p><strong>Workspace:</strong> <span th:text="${workspaceUid}">WRK-00000000</span></p>
+</body>
+</html>
