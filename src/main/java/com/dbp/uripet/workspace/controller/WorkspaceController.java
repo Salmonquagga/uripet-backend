@@ -1,14 +1,17 @@
 package com.dbp.uripet.workspace.controller;
 
 import com.dbp.uripet.user.domain.User;
+import com.dbp.uripet.workspace.dto.TransferOwnershipRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceMemberRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceMemberResponseDto;
+import com.dbp.uripet.workspace.dto.WorkspaceMemberRoleRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceResponseDto;
 import com.dbp.uripet.workspace.service.WorkspaceService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -54,13 +57,6 @@ public class WorkspaceController {
         );
     }
 
-    /*
-     * No existe POST /workspaces.
-     *
-     * Los grupos pagados se crearán desde:
-     * POST /billing/checkout
-     */
-
     @PatchMapping("/{workspaceUid}")
     public ResponseEntity<WorkspaceResponseDto>
     updateWorkspace(
@@ -83,12 +79,6 @@ public class WorkspaceController {
         );
     }
 
-    /*
-     * Se mantiene temporalmente para devolver
-     * un mensaje orientativo.
-     *
-     * No cancela ni elimina el grupo.
-     */
     @DeleteMapping("/{workspaceUid}")
     public ResponseEntity<Map<String, Object>>
     cancelWorkspace(
@@ -131,10 +121,10 @@ public class WorkspaceController {
     }
 
     /*
-     * Este endpoint todavía usa userUid.
+     * Endpoint temporal.
      *
-     * En el bloque de invitaciones lo reemplazaremos
-     * por invitaciones mediante correo.
+     * El flujo recomendado para el frontend será:
+     * POST /workspaces/{workspaceUid}/invitations
      */
     @PostMapping("/{workspaceUid}/members")
     public ResponseEntity<WorkspaceMemberResponseDto>
@@ -149,9 +139,38 @@ public class WorkspaceController {
             @AuthenticationPrincipal
             User currentUser
     ) {
-        return ResponseEntity.ok(
+        return new ResponseEntity<>(
                 workspaceService.addMember(
                         workspaceUid,
+                        request,
+                        currentUser
+                ),
+                HttpStatus.CREATED
+        );
+    }
+
+    @PatchMapping(
+            "/{workspaceUid}/members/{userUid}/role"
+    )
+    public ResponseEntity<WorkspaceMemberResponseDto>
+    updateMemberRole(
+            @PathVariable
+            String workspaceUid,
+
+            @PathVariable
+            String userUid,
+
+            @Valid
+            @RequestBody
+            WorkspaceMemberRoleRequestDto request,
+
+            @AuthenticationPrincipal
+            User currentUser
+    ) {
+        return ResponseEntity.ok(
+                workspaceService.updateMemberRole(
+                        workspaceUid,
+                        userUid,
                         request,
                         currentUser
                 )
@@ -182,6 +201,52 @@ public class WorkspaceController {
                 Map.of(
                         "message",
                         "Workspace member deactivated successfully"
+                )
+        );
+    }
+
+    @PostMapping("/{workspaceUid}/leave")
+    public ResponseEntity<Map<String, Object>>
+    leaveWorkspace(
+            @PathVariable
+            String workspaceUid,
+
+            @AuthenticationPrincipal
+            User currentUser
+    ) {
+        workspaceService.leaveWorkspace(
+                workspaceUid,
+                currentUser
+        );
+
+        return ResponseEntity.ok(
+                Map.of(
+                        "message",
+                        "You left the workspace successfully"
+                )
+        );
+    }
+
+    @PostMapping(
+            "/{workspaceUid}/transfer-ownership"
+    )
+    public ResponseEntity<WorkspaceResponseDto>
+    transferOwnership(
+            @PathVariable
+            String workspaceUid,
+
+            @Valid
+            @RequestBody
+            TransferOwnershipRequestDto request,
+
+            @AuthenticationPrincipal
+            User currentUser
+    ) {
+        return ResponseEntity.ok(
+                workspaceService.transferOwnership(
+                        workspaceUid,
+                        request,
+                        currentUser
                 )
         );
     }

@@ -1,7 +1,6 @@
 package com.dbp.uripet.workspace.service;
 
 import com.dbp.uripet.config.error.ConflictException;
-import com.dbp.uripet.config.error.ForbiddenException;
 import com.dbp.uripet.config.error.InvalidOperationException;
 import com.dbp.uripet.config.error.ResourceNotFoundException;
 import com.dbp.uripet.config.error.ValidationException;
@@ -13,8 +12,10 @@ import com.dbp.uripet.workspace.domain.WorkspaceMember;
 import com.dbp.uripet.workspace.domain.enums.PlanType;
 import com.dbp.uripet.workspace.domain.enums.WorkspaceRole;
 import com.dbp.uripet.workspace.domain.enums.WorkspaceStatus;
+import com.dbp.uripet.workspace.dto.TransferOwnershipRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceMemberRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceMemberResponseDto;
+import com.dbp.uripet.workspace.dto.WorkspaceMemberRoleRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspacePermissionsDto;
 import com.dbp.uripet.workspace.dto.WorkspaceRequestDto;
 import com.dbp.uripet.workspace.dto.WorkspaceResponseDto;
@@ -43,10 +44,6 @@ public class WorkspaceService {
 
     private final PlanAccessService planAccessService;
 
-    /*
-     * Se ejecuta automáticamente al registrar
-     * a un usuario.
-     */
     @Transactional
     public WorkspaceResponseDto
     createPersonalWorkspaceForUser(
@@ -99,13 +96,6 @@ public class WorkspaceService {
                 });
     }
 
-    /*
-     * Ya no se permite crear grupos pagados
-     * directamente desde WorkspaceService.
-     *
-     * El grupo se creará desde BillingService
-     * junto con su suscripción y transacción.
-     */
     @Transactional
     public WorkspaceResponseDto createWorkspace(
             WorkspaceRequestDto request,
@@ -116,20 +106,18 @@ public class WorkspaceService {
         );
     }
 
-    /*
-     * Lista únicamente las membresías activas.
-     *
-     * Un registro inactivo no debe permitir acceso,
-     * aunque siga guardado para historial.
-     */
     @Transactional(readOnly = true)
     public List<WorkspaceResponseDto> getMyWorkspaces(
             User currentUser
     ) {
         return workspaceMemberRepository
-                .findByUserAndActiveTrue(currentUser)
+                .findByUserAndActiveTrue(
+                        currentUser
+                )
                 .stream()
-                .map(WorkspaceMember::getWorkspace)
+                .map(
+                        WorkspaceMember::getWorkspace
+                )
                 .distinct()
                 .sorted(
                         workspaceComparator(
@@ -162,12 +150,6 @@ public class WorkspaceService {
         );
     }
 
-    /*
-     * Solo modifica el nombre.
-     *
-     * El plan y el estado nunca se reciben
-     * desde el frontend por este endpoint.
-     */
     @Transactional
     public WorkspaceResponseDto updateWorkspace(
             String workspaceUid,
@@ -188,9 +170,6 @@ public class WorkspaceService {
             );
         }
 
-        /*
-         * Protección adicional para el espacio personal.
-         */
         if (workspace.getPlanType()
                 == PlanType.FREE) {
 
@@ -203,21 +182,14 @@ public class WorkspaceService {
             );
         }
 
-        Workspace savedWorkspace =
-                workspaceRepository.save(workspace);
-
         return toResponse(
-                savedWorkspace,
+                workspaceRepository.save(
+                        workspace
+                ),
                 currentUser
         );
     }
 
-    /*
-     * No elimina físicamente el grupo.
-     *
-     * La cancelación comercial real se realizará
-     * desde BillingService.
-     */
     @Transactional
     public void cancelWorkspace(
             String workspaceUid,
@@ -283,10 +255,6 @@ public class WorkspaceService {
                         )
                         .orElse(null);
 
-        /*
-         * Si ya pertenecía y está activo,
-         * no se vuelve a crear.
-         */
         if (existingMember != null
                 && existingMember.isActive()) {
 
@@ -296,32 +264,18 @@ public class WorkspaceService {
         }
 
         WorkspaceRole role =
-                parseWorkspaceRole(
+                parseAssignableRole(
                         request.getRole()
                 );
 
-        if (role == WorkspaceRole.OWNER) {
-            throw new InvalidOperationException(
-                    "Use ownership transfer flow to assign OWNER role"
-            );
-        }
-
-        /*
-         * Si existía una membresía inactiva,
-         * se reactiva en vez de insertar otro registro
-         * y romper la restricción única.
-         */
         if (existingMember != null) {
             existingMember.setActive(true);
             existingMember.setRole(role);
 
-            WorkspaceMember savedMember =
+            return toMemberResponse(
                     workspaceMemberRepository.save(
                             existingMember
-                    );
-
-            return toMemberResponse(
-                    savedMember
+                    )
             );
         }
 
@@ -333,12 +287,11 @@ public class WorkspaceService {
                         .active(true)
                         .build();
 
-        WorkspaceMember savedMember =
+        return toMemberResponse(
                 workspaceMemberRepository.save(
                         member
-                );
-
-        return toMemberResponse(savedMember);
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -364,14 +317,87 @@ public class WorkspaceService {
                 )
                 .stream()
                 .sorted(
-                        Comparator.comparing(
+                        Comparator.comparingInt(
                                 member ->
-                                        member.getRole()
+                                        member
+                                                .getRole()
                                                 .ordinal()
                         )
                 )
                 .map(this::toMemberResponse)
                 .toList();
+    }
+
+    @Transactional
+    public WorkspaceMemberResponseDto
+    updateMemberRole(
+            String workspaceUid,
+            String userUid,
+            WorkspaceMemberRoleRequestDto request,
+            User currentUser
+    ) {
+        Workspace workspace =
+                getWorkspaceAndCheckMembership(
+                        workspaceUid,
+                        currentUser
+                );
+
+        planAccessService.checkCanManageMembers(
+                workspace,
+                currentUser
+        );
+
+        WorkspaceMember currentMember =
+                workspaceMemberRepository
+                        .findByWorkspaceAndUserAndActiveTrue(
+                                workspace,
+                                currentUser
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Current workspace membership not found"
+                                )
+                        );
+
+        User targetUser =
+                getUser(userUid);
+
+        WorkspaceMember targetMember =
+                getActiveMember(
+                        workspace,
+                        targetUser
+                );
+
+        if (targetMember.getRole()
+                == WorkspaceRole.OWNER) {
+
+            throw new InvalidOperationException(
+                    "Owner role cannot be changed through this endpoint"
+            );
+        }
+
+        if (currentMember.getRole()
+                == WorkspaceRole.ADMIN
+                && targetMember.getRole()
+                == WorkspaceRole.ADMIN) {
+
+            throw new InvalidOperationException(
+                    "An admin cannot change another admin role"
+            );
+        }
+
+        WorkspaceRole newRole =
+                parseAssignableRole(
+                        request.getRole()
+                );
+
+        targetMember.setRole(newRole);
+
+        return toMemberResponse(
+                workspaceMemberRepository.save(
+                        targetMember
+                )
+        );
     }
 
     @Transactional
@@ -392,25 +418,13 @@ public class WorkspaceService {
         );
 
         User targetUser =
-                userRepository
-                        .findByUid(userUid)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "User not found"
-                                )
-                        );
+                getUser(userUid);
 
         WorkspaceMember member =
-                workspaceMemberRepository
-                        .findByWorkspaceAndUserAndActiveTrue(
-                                workspace,
-                                targetUser
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Active workspace member not found"
-                                )
-                        );
+                getActiveMember(
+                        workspace,
+                        targetUser
+                );
 
         if (member.getRole()
                 == WorkspaceRole.OWNER) {
@@ -420,13 +434,120 @@ public class WorkspaceService {
             );
         }
 
-        /*
-         * No borramos físicamente.
-         * Se conserva como historial y queda sin acceso.
-         */
         member.setActive(false);
 
         workspaceMemberRepository.save(member);
+    }
+
+    @Transactional
+    public void leaveWorkspace(
+            String workspaceUid,
+            User currentUser
+    ) {
+        Workspace workspace =
+                getWorkspaceAndCheckMembership(
+                        workspaceUid,
+                        currentUser
+                );
+
+        WorkspaceMember membership =
+                getActiveMember(
+                        workspace,
+                        currentUser
+                );
+
+        if (membership.getRole()
+                == WorkspaceRole.OWNER) {
+
+            throw new InvalidOperationException(
+                    "Workspace owner must transfer ownership before leaving"
+            );
+        }
+
+        membership.setActive(false);
+
+        workspaceMemberRepository.save(
+                membership
+        );
+    }
+
+    @Transactional
+    public WorkspaceResponseDto transferOwnership(
+            String workspaceUid,
+            TransferOwnershipRequestDto request,
+            User currentUser
+    ) {
+        Workspace workspace =
+                getWorkspaceAndCheckMembership(
+                        workspaceUid,
+                        currentUser
+                );
+
+        planAccessService.checkWorkspaceOwner(
+                workspace,
+                currentUser
+        );
+
+        if (workspace.getPlanType()
+                == PlanType.FREE) {
+
+            throw new InvalidOperationException(
+                    "Personal workspace ownership cannot be transferred"
+            );
+        }
+
+        User newOwner =
+                getUser(
+                        request.getNewOwnerUserUid()
+                );
+
+        if (newOwner.getId()
+                .equals(currentUser.getId())) {
+
+            throw new InvalidOperationException(
+                    "User is already the workspace owner"
+            );
+        }
+
+        WorkspaceMember currentOwnerMember =
+                getActiveMember(
+                        workspace,
+                        currentUser
+                );
+
+        WorkspaceMember newOwnerMember =
+                getActiveMember(
+                        workspace,
+                        newOwner
+                );
+
+        currentOwnerMember.setRole(
+                WorkspaceRole.ADMIN
+        );
+
+        newOwnerMember.setRole(
+                WorkspaceRole.OWNER
+        );
+
+        workspaceMemberRepository.save(
+                currentOwnerMember
+        );
+
+        workspaceMemberRepository.save(
+                newOwnerMember
+        );
+
+        workspace.setOwner(newOwner);
+
+        Workspace savedWorkspace =
+                workspaceRepository.save(
+                        workspace
+                );
+
+        return toResponse(
+                savedWorkspace,
+                newOwner
+        );
     }
 
     private WorkspaceResponseDto
@@ -435,7 +556,9 @@ public class WorkspaceService {
             User user
     ) {
         workspace.setOwner(user);
-        workspace.setPlanType(PlanType.FREE);
+        workspace.setPlanType(
+                PlanType.FREE
+        );
         workspace.setStatus(
                 WorkspaceStatus.ACTIVE
         );
@@ -464,27 +587,26 @@ public class WorkspaceService {
             ownerMember.setRole(
                     WorkspaceRole.OWNER
             );
-
             ownerMember.setActive(true);
         }
 
-        workspaceMemberRepository.save(ownerMember);
+        workspaceMemberRepository.save(
+                ownerMember
+        );
 
-        return toResponse(workspace, user);
+        return toResponse(
+                workspace,
+                user
+        );
     }
 
-    private Workspace getWorkspaceAndCheckMembership(
+    private Workspace
+    getWorkspaceAndCheckMembership(
             String workspaceUid,
             User currentUser
     ) {
         Workspace workspace =
-                workspaceRepository
-                        .findByUid(workspaceUid)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Workspace not found"
-                                )
-                        );
+                getWorkspace(workspaceUid);
 
         planAccessService.checkCanAccessWorkspace(
                 workspace,
@@ -494,7 +616,8 @@ public class WorkspaceService {
         return workspace;
     }
 
-    private Workspace getWorkspaceAndCheckManageAccess(
+    private Workspace
+    getWorkspaceAndCheckManageAccess(
             String workspaceUid,
             User currentUser
     ) {
@@ -512,7 +635,63 @@ public class WorkspaceService {
         return workspace;
     }
 
-    private WorkspaceRole parseWorkspaceRole(
+    private Workspace getWorkspace(
+            String workspaceUid
+    ) {
+        if (!StringUtils.hasText(workspaceUid)) {
+            throw new ValidationException(
+                    "Workspace UID is required"
+            );
+        }
+
+        return workspaceRepository
+                .findByUid(
+                        workspaceUid.trim()
+                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Workspace not found"
+                        )
+                );
+    }
+
+    private User getUser(
+            String userUid
+    ) {
+        if (!StringUtils.hasText(userUid)) {
+            throw new ValidationException(
+                    "User UID is required"
+            );
+        }
+
+        return userRepository
+                .findByUid(
+                        userUid.trim()
+                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "User not found"
+                        )
+                );
+    }
+
+    private WorkspaceMember getActiveMember(
+            Workspace workspace,
+            User user
+    ) {
+        return workspaceMemberRepository
+                .findByWorkspaceAndUserAndActiveTrue(
+                        workspace,
+                        user
+                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Active workspace member not found"
+                        )
+                );
+    }
+
+    private WorkspaceRole parseAssignableRole(
             String value
     ) {
         if (!StringUtils.hasText(value)) {
@@ -520,13 +699,23 @@ public class WorkspaceService {
         }
 
         try {
-            return WorkspaceRole.valueOf(
-                    value.trim().toUpperCase()
-            );
-        } catch (Exception exception) {
+            WorkspaceRole role =
+                    WorkspaceRole.valueOf(
+                            value.trim()
+                                    .toUpperCase()
+                    );
+
+            if (role == WorkspaceRole.OWNER) {
+                throw new InvalidOperationException(
+                        "Use ownership transfer flow to assign OWNER role"
+                );
+            }
+
+            return role;
+
+        } catch (IllegalArgumentException exception) {
             throw new ValidationException(
-                    "Invalid workspace role: "
-                            + value
+                    "Role must be ADMIN or MEMBER"
             );
         }
     }
@@ -536,17 +725,11 @@ public class WorkspaceService {
             User currentUser
     ) {
         return Comparator
-                /*
-                 * Activos primero.
-                 */
                 .comparing(
                         (Workspace workspace) ->
                                 workspace.getStatus()
                                         != WorkspaceStatus.ACTIVE
                 )
-                /*
-                 * Grupos propios antes que grupos ajenos.
-                 */
                 .thenComparing(workspace ->
                         workspace.getOwner() == null
                                 || !workspace
@@ -556,10 +739,6 @@ public class WorkspaceService {
                                         currentUser.getId()
                                 )
                 )
-                /*
-                 * Espacio personal primero
-                 * entre los espacios propios.
-                 */
                 .thenComparing(workspace ->
                         workspace.getPlanType()
                                 == PlanType.FREE
@@ -641,10 +820,14 @@ public class WorkspaceService {
                                 : null
                 )
                 .planType(
-                        workspace.getPlanType().name()
+                        workspace
+                                .getPlanType()
+                                .name()
                 )
                 .status(
-                        workspace.getStatus().name()
+                        workspace
+                                .getStatus()
+                                .name()
                 )
                 .currentUserRole(
                         member != null
@@ -660,9 +843,15 @@ public class WorkspaceService {
                 )
                 .active(active)
                 .restricted(!active)
-                .membersCount(membersCount)
-                .petsCount(petsCount)
-                .permissions(permissions)
+                .membersCount(
+                        membersCount
+                )
+                .petsCount(
+                        petsCount
+                )
+                .permissions(
+                        permissions
+                )
                 .createdAt(
                         workspace.getCreatedAt()
                 )
@@ -676,20 +865,33 @@ public class WorkspaceService {
     toMemberResponse(
             WorkspaceMember member
     ) {
-        User user = member.getUser();
-
-        Workspace workspace =
-                member.getWorkspace();
-
         return WorkspaceMemberResponseDto.builder()
                 .workspaceUid(
-                        workspace.getUid()
+                        member
+                                .getWorkspace()
+                                .getUid()
                 )
-                .userUid(user.getUid())
-                .userName(user.getName())
-                .userEmail(user.getEmail())
-                .role(member.getRole().name())
-                .active(member.isActive())
+                .userUid(
+                        member
+                                .getUser()
+                                .getUid()
+                )
+                .userName(
+                        member
+                                .getUser()
+                                .getName()
+                )
+                .userEmail(
+                        member
+                                .getUser()
+                                .getEmail()
+                )
+                .role(
+                        member.getRole().name()
+                )
+                .active(
+                        member.isActive()
+                )
                 .createdAt(
                         member.getCreatedAt()
                 )
