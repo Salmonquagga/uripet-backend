@@ -27,8 +27,7 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponseDTO>
-    handleNotFound(
+    public ResponseEntity<ErrorResponseDTO> handleNotFound(
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
@@ -41,8 +40,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AppException.class)
-    public ResponseEntity<ErrorResponseDTO>
-    handleAppException(
+    public ResponseEntity<ErrorResponseDTO> handleAppException(
             AppException exception,
             HttpServletRequest request
     ) {
@@ -54,25 +52,19 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            MethodArgumentNotValidException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleMethodArgumentNotValid(
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponseDTO> handleMethodArgumentNotValid(
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
         String message =
-                exception
-                        .getBindingResult()
+                exception.getBindingResult()
                         .getFieldErrors()
                         .stream()
                         .map(this::formatFieldError)
                         .filter(Objects::nonNull)
                         .distinct()
-                        .collect(
-                                Collectors.joining("; ")
-                        );
+                        .collect(Collectors.joining("; "));
 
         if (message.isBlank()) {
             message = "Validation failed";
@@ -86,29 +78,21 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            ConstraintViolationException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleConstraintViolation(
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleConstraintViolation(
             ConstraintViolationException exception,
             HttpServletRequest request
     ) {
         String message =
-                exception
-                        .getConstraintViolations()
+                exception.getConstraintViolations()
                         .stream()
                         .map(violation ->
-                                violation
-                                        .getPropertyPath()
+                                violation.getPropertyPath()
                                         + ": "
-                                        + violation
-                                        .getMessage()
+                                        + violation.getMessage()
                         )
                         .distinct()
-                        .collect(
-                                Collectors.joining("; ")
-                        );
+                        .collect(Collectors.joining("; "));
 
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
@@ -118,11 +102,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            HttpMessageNotReadableException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleHttpMessageNotReadable(
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponseDTO> handleHttpMessageNotReadable(
             HttpMessageNotReadableException exception,
             HttpServletRequest request
     ) {
@@ -134,19 +115,14 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            MethodArgumentTypeMismatchException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleTypeMismatch(
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponseDTO> handleTypeMismatch(
             MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
         String expectedType =
                 exception.getRequiredType() != null
-                        ? exception
-                          .getRequiredType()
-                          .getSimpleName()
+                        ? exception.getRequiredType().getSimpleName()
                         : "valid value";
 
         String message =
@@ -163,11 +139,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            MissingRequestValueException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleMissingRequestValue(
+    @ExceptionHandler(MissingRequestValueException.class)
+    public ResponseEntity<ErrorResponseDTO> handleMissingRequestValue(
             MissingRequestValueException exception,
             HttpServletRequest request
     ) {
@@ -179,11 +152,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            HttpRequestMethodNotSupportedException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleMethodNotSupported(
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleMethodNotSupported(
             HttpRequestMethodNotSupportedException exception,
             HttpServletRequest request
     ) {
@@ -195,11 +165,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            AuthenticationException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleAuthentication(
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAuthentication(
             AuthenticationException exception,
             HttpServletRequest request
     ) {
@@ -211,11 +178,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            AccessDeniedException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleAccessDenied(
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(
             AccessDeniedException exception,
             HttpServletRequest request
     ) {
@@ -227,11 +191,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            DataIntegrityViolationException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleDataIntegrity(
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleDataIntegrity(
             DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
@@ -249,11 +210,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(
-            IllegalArgumentException.class
-    )
-    public ResponseEntity<ErrorResponseDTO>
-    handleIllegalArgument(
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(
             IllegalArgumentException exception,
             HttpServletRequest request
     ) {
@@ -268,8 +226,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponseDTO>
-    handleGeneral(
+    public ResponseEntity<ErrorResponseDTO> handleGeneral(
             Exception exception,
             HttpServletRequest request
     ) {
@@ -288,8 +245,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    private ResponseEntity<ErrorResponseDTO>
-    buildResponse(
+    private ResponseEntity<ErrorResponseDTO> buildResponse(
             HttpStatus status,
             String error,
             String message,
